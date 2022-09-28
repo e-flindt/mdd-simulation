@@ -1,6 +1,7 @@
 package eflindt.mdd.simulation;
 
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -8,7 +9,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.function.Function;
+import java.util.function.Consumer;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 public class Main {
@@ -24,6 +26,7 @@ public class Main {
 		examples.put(2, new Example("Ecosystem with support for semi-automatic model and transformation co-evolution where a meta model is changed", Main::example2));
 		examples.put(3, new Example("Ecosystem with support for semi-automatic model and transformation co-evolution where a platform is changed", Main::example3));
 		examples.put(4, new Example("Ecosystem with support for semi-automatic model and transformation co-evolution where the java version is changed", Main::example4));
+		examples.put(5, new Example("Ecosystem with transformation to same metamodel version, will create a loop", Main::example5));
 	}
 	
 	private static final void log(String message) {
@@ -34,11 +37,11 @@ public class Main {
 	
 	// basic setup
 	private static final Artifact executable = buildArtifact("executable").build();
-	private static final Artifact deploymentPipeline = buildTransformation("deploymentPipeline")
+	private static final Artifact deploymentPipeline = buildConsumer("deploymentPipeline")
 		.withInput(executable.version())
-		.withTransformation(m -> {
-			log("[DEPLOY] Integration testing and deploying " + m.version());
-			return Optional.empty();
+		.withConsumer(v -> {
+			log("[DEPLOY] Integration testing and deploying " + v);
+			return true;
 		})
 		.build();
 	private static final Artifact sourceCode = buildArtifact("sourceCode").build();
@@ -51,9 +54,10 @@ public class Main {
 	private static final Artifact javaBuildPipeline = buildTransformation("javaBuildPipeline")
 		.withInput(java.version())
 		.withOutput(executable.version())
-		.withTransformation(m -> {
-			log("[BUILD] Unit testing and building " + m.version());
-			return Optional.of(buildArtifact(String.format("%sVer%s.jar", m.version().name(), m.version().version()))
+		.withTransformation(v -> {
+			log("[BUILD] Unit testing and building " + v);
+			Artifact m = repo.pull(v);
+			repo.push(buildArtifact(String.format("%sVer%s.jar", m.version().name(), m.version().version()))
 				.withMetamodel(executable.version())
 				.build());
 		})
@@ -74,14 +78,37 @@ public class Main {
 	private static final Artifact orderMicroservice = buildArtifact("orderMicroservice")
 		.withMetamodel(microservice.version()).build();
 	
+	// microservice consumers
+	private static final Artifact microserviceValidator = buildConsumer("microserviceValidator")
+		.withInput(microservice.version())
+		.withConsumer(v -> {
+			log("[CONSUME] Validating model of type microservice " + v);
+			return true;
+		})
+		.build();
+	private static final Artifact microserviceAnalyzer = buildConsumer("microserviceAnalyzer")
+		.withInput(microservice.version())
+		.withConsumer(v -> {
+			log("[CONSUME] Analyzing model of type microservice " + v);
+			return true;
+		})
+		.build();
+	private static final Artifact microserviceSimulator = buildConsumer("microserviceSimulator")
+		.withInput(microservice.version())
+		.withConsumer(v -> {
+			log("[CONSUME] Simulating model of type microservice " + v);
+			return true;
+		})
+		.build();
+	
 	// microservice generators
 	private static final Artifact microserviceToSpringBoot = buildTransformation("microserviceToSpringBoot")
 		.withMetamodel(trafoMM.version())
 		.withInput(microservice.version())
 		.withOutput(springBootPlatform.version())
-		.withTransformation(m -> {
-			log("[M2T] Generating Spring Boot microservices for model " + m.version());
-			return Optional.of(buildArtifact(m.version().name() + "SpringBootGen")
+		.withTransformation(v -> {
+			log("[M2T] Generating Spring Boot microservices for model " + v);
+			repo.push(buildArtifact(v.name() + "SpringBootGen")
 				.withMetamodel(java.version()).build());
 		})
 		.build();
@@ -89,9 +116,9 @@ public class Main {
 		.withMetamodel(trafoMM.version())
 		.withInput(microservice.version())
 		.withOutput(dotNetPlatform.version())
-		.withTransformation(m -> {
-			log("[M2T] Generating Dot Net microservices for model " + m.version());
-			return Optional.of(buildArtifact(m.version().name() + "DotNetGen")
+		.withTransformation(v -> {
+			log("[M2T] Generating Dot Net microservices for model " + v);
+			repo.push(buildArtifact(v.name() + "DotNetGen")
 				.withMetamodel(sourceCode.version()).build());
 		})
 		.build();
@@ -99,10 +126,19 @@ public class Main {
 		.withMetamodel(trafoMM.version())
 		.withInput(microservice.version())
 		.withOutput(pythonPlatform.version())
-		.withTransformation(m -> {
-			log("[M2T] Generating Python microservices for model " + m.version());
-			return Optional.of(buildArtifact(m.version().name() + "PythonGen")
+		.withTransformation(v -> {
+			log("[M2T] Generating Python microservices for model " + v);
+			repo.push(buildArtifact(v.name() + "PythonGen")
 				.withMetamodel(sourceCode.version()).build());
+		})
+		.build();
+	
+	// generator validator
+	private static final Artifact generatorValidator = buildConsumer("generatorValidator")
+		.withInput(trafoMM.version())
+		.withConsumer(v -> {
+			log("[CONSUME] Validating generator " + v);
+			return true;
 		})
 		.build();
 	
@@ -111,58 +147,59 @@ public class Main {
 	private static final Artifact coEvModelGen = buildTransformation("coEvModelGen")
 		.withInput(ecore.version())
 		.withOutput(coEvM.version())
-		.withTransformation(m -> {
-			if (m.version().isInitialVersion()) {
-				log("[CoEv] Don't create migration model for initial version of " + m.version());
-				return Optional.empty();
+		.withTransformation(v -> {
+			if (v.isInitialVersion()) {
+				log("[CoEv] Don't create migration model for initial version of " + v);
+			} else {
+				log("[CoEv] Creating migration model for " + v);
+				repo.push(buildCoEvolutionModel(v.name() + "-coEvM")
+					.withMetamodel(coEvM.version())
+					.withChangedArtifact(v).build());
 			}
-			log("[CoEv] Creating migration model for " + m.version());
-			return Optional.of(buildCoEvolutionModel(m.version().name() + "-coEvM")
-				.withMetamodel(coEvM.version())
-				.withChangedArtifact(m.version()).build());
 		})
 		.build();
 	private static final Artifact modelCoEvGen = buildTransformation("modelCoEvGen")
 		.withInput(coEvM.version())
 		.withOutput(trafoMM.version())
-		.withTransformation(m -> {
+		.withTransformation(v -> {
+			Artifact m = repo.pull(v);
 			if (m instanceof CoEvolutionModel coev) {
 				ArtifactVersion changedArtifact = coev.getChangedArtifact();
 				log("[CoEv] Creating model migration for " + changedArtifact);
-				return Optional.of(buildTransformation(changedArtifact.name() + "-model-migration")
+				repo.push(buildTransformation(changedArtifact.name() + "-model-migration")
 					// previous meta model version is the input
 					.withInput(changedArtifact.decrement())
 					// new meta model version is the output
 					.withOutput(changedArtifact)
-					.withTransformation(instance -> {
+					.withTransformation(instanceVersion -> {
 						// instances that are not conform to the previous version must not be migrated
+						Artifact instance = repo.pull(instanceVersion);
 						if (instance.getMetamodels().contains(changedArtifact.decrement())) {
 							log(String.format("[M2M] Migrating model %s", instance.version()));
 							// the migration must update the meta model to the changed model
 							Artifact migratedInstance = copyArtifact(instance)
 								.updateMetamodel(changedArtifact).build();
-							return Optional.of(migratedInstance);
-						}
-						return Optional.empty();
-						
+							repo.push(migratedInstance);
+						}						
 					})
 					.build());
 			}
-			return Optional.empty();
 		}).build();
 	private static final Artifact trafoCoEvGen = buildTransformation("trafoCoEvGen")
 		.withInput(coEvM.version())
 		.withOutput(trafoMM.version())
-		.withTransformation(m -> {
+		.withTransformation(v -> {
+			Artifact m = repo.pull(v);
 			if (m instanceof CoEvolutionModel coev) {
 				ArtifactVersion changedArtifact = coev.getChangedArtifact();
 				log("[CoEv] Creating transformation migration for " + changedArtifact);
-				return Optional.of(buildTransformation(changedArtifact.name() + "-transformation-migration")
+				repo.push(buildTransformation(changedArtifact.name() + "-transformation-migration")
 					// signals that this transformation transforms other transformation
 					// this is a higher order transformation
 					.withInput(trafoMM.version())
 					.withOutput(trafoMM.version())
-					.withTransformation(t -> {
+					.withTransformation(tVersion -> {
+						Artifact t = repo.pull(tVersion);
 						// this condition is important to prevent a loop
 						// only transformations that are dependent on the previous version must be migrated
 						if (t.getInputs().contains(changedArtifact.decrement())
@@ -171,13 +208,11 @@ public class Main {
 							// the migration must update the dependency to the changed model
 							Artifact migratedTransformation = copyArtifact(t)
 								.updateDependency(changedArtifact).build();
-							return Optional.of(migratedTransformation);
+							repo.push(migratedTransformation);
 						}
-						return Optional.empty();
 					})
 					.build());
 			}
-			return Optional.empty();
 		}).build();
 	
 	public static void main(String[] args) {
@@ -209,56 +244,74 @@ public class Main {
 	}
 	
 	public static void example1() {
-		repo.commit(executable, deploymentPipeline, sourceCode, ecore, trafoMM, java, javaBuildPipeline, springBootPlatform, dotNetPlatform, pythonPlatform, microservice, microserviceToSpringBoot, microserviceToDotNet, customerMicroservice, shoppingCartMicroservice, orderMicroservice, microserviceToPython);
+		repo.push(executable, sourceCode, ecore, trafoMM, java, javaBuildPipeline, springBootPlatform, dotNetPlatform, pythonPlatform, microservice, microserviceToSpringBoot, microserviceToDotNet, customerMicroservice, shoppingCartMicroservice, orderMicroservice, microserviceToPython, generatorValidator, microserviceAnalyzer, microserviceSimulator, microserviceValidator, deploymentPipeline);
 		log("### Changing microservice meta model and migrating Spring Boot generator manually:");
-		repo.commit(microservice);
-		repo.commit(copyArtifact(customerMicroservice)
+		repo.push(customerMicroservice);
+		repo.push(microservice);
+		repo.push(copyArtifact(customerMicroservice)
 			.updateMetamodel(microservice.version().increment()).build());
-		repo.commit(copyArtifact(microserviceToSpringBoot)
+		repo.push(copyArtifact(microserviceToSpringBoot)
 			.updateDependency(microservice.version().increment()).build());
 	}
 
 	public static void example2() {
-		repo.commit(executable, deploymentPipeline, sourceCode, ecore, trafoMM, java, javaBuildPipeline, springBootPlatform, dotNetPlatform, pythonPlatform, coEvModelGen, modelCoEvGen, trafoCoEvGen, microservice, microserviceToSpringBoot, microserviceToDotNet, customerMicroservice, shoppingCartMicroservice, orderMicroservice, microserviceToPython);
+		repo.push(executable, sourceCode, ecore, trafoMM, java, javaBuildPipeline, springBootPlatform, dotNetPlatform, pythonPlatform, coEvModelGen, modelCoEvGen, trafoCoEvGen, microservice, microserviceToSpringBoot, microserviceToDotNet, customerMicroservice, shoppingCartMicroservice, orderMicroservice, microserviceToPython, generatorValidator, microserviceAnalyzer, microserviceSimulator, microserviceValidator, deploymentPipeline);
 		// adding the meta model again will trigger the creation of a new version
 		log("### Changing microservice meta model:");
-		repo.commit(microservice);
+		repo.push(microservice);
 	}
 
 	public static void example3() {
-		repo.commit(executable, deploymentPipeline, sourceCode, ecore, trafoMM, java, javaBuildPipeline, springBootPlatform, dotNetPlatform, pythonPlatform, coEvModelGen, modelCoEvGen, trafoCoEvGen, microservice, microserviceToSpringBoot, microserviceToDotNet, customerMicroservice, shoppingCartMicroservice, orderMicroservice, microserviceToPython);
+		repo.push(executable, sourceCode, ecore, trafoMM, java, javaBuildPipeline, springBootPlatform, dotNetPlatform, pythonPlatform, coEvModelGen, modelCoEvGen, trafoCoEvGen, microservice, microserviceToSpringBoot, microserviceToDotNet, customerMicroservice, shoppingCartMicroservice, orderMicroservice, microserviceToPython, generatorValidator, microserviceAnalyzer, microserviceSimulator, microserviceValidator, deploymentPipeline);
 		log("### Changing Spring Boot platform:");
 		// update the platform
-		repo.commit(springBootPlatform);
+		repo.push(springBootPlatform);
 		// update the generator
-		repo.commit(copyArtifact(microserviceToSpringBoot)
+		repo.push(copyArtifact(microserviceToSpringBoot)
 			.updateDependency(springBootPlatform.version().increment()).build());
 	}
 
 	public static void example4() {
-		repo.commit(executable, deploymentPipeline, sourceCode, ecore, trafoMM, java, javaBuildPipeline, springBootPlatform, dotNetPlatform, pythonPlatform, coEvModelGen, modelCoEvGen, trafoCoEvGen, microservice, microserviceToSpringBoot, microserviceToDotNet, customerMicroservice, shoppingCartMicroservice, orderMicroservice, microserviceToPython);
+		repo.push(executable, sourceCode, ecore, trafoMM, java, javaBuildPipeline, springBootPlatform, dotNetPlatform, pythonPlatform, coEvModelGen, modelCoEvGen, trafoCoEvGen, microservice, microserviceToSpringBoot, microserviceToDotNet, customerMicroservice, shoppingCartMicroservice, orderMicroservice, microserviceToPython, generatorValidator, microserviceAnalyzer, microserviceSimulator, microserviceValidator, deploymentPipeline);
 		log("### Changing Java version and migrating Spring Boot platform, Java build pipeline and Spring Boot Generator manually:");
 		// update java
-		repo.commit(java);
+		repo.push(java);
 		// manual co-evolution
-		repo.commit(copyArtifact(springBootPlatform)
+		repo.push(copyArtifact(springBootPlatform)
 			.updateMetamodel(java.version().increment()).build());
-		repo.commit(copyArtifact(javaBuildPipeline)
+		repo.push(copyArtifact(javaBuildPipeline)
 			.updateDependency(java.version().increment()).build());
-		repo.commit(copyArtifact(microserviceToSpringBoot)
+		repo.push(copyArtifact(microserviceToSpringBoot)
 			.updateDependency(springBootPlatform.version().increment()).build());
+	}
+
+	public static void example5() {
+		repo.push(microservice, microserviceToSpringBoot, customerMicroservice, shoppingCartMicroservice);
+		log("### Creating transformation with the same meta model version as input and output:");
+		repo.push(buildTransformation("loop").withInput(microservice.version()).withOutput(microservice.version()).withTransformation(v -> {
+			log("Looping " + v);
+			repo.push(repo.pull(v));
+		}).build());
 	}
 	
 	public static void onChange(Repository repo, ArtifactVersion version) {
-		for (ArtifactVersion metamodel : repo.getMetamodels(version)) {
-			for (Transformation transformation : repo.getAcceptingTransformations(metamodel)) {
-				transformation.getTransformation().apply(repo.get(version)).ifPresent(repo::commit);
+		Set<ArtifactVersion> metamodels = repo.getMetamodels(version);
+		boolean proceed = metamodels.isEmpty() || metamodels.stream()
+			.map(repo::getConsumers).flatMap(Collection::stream)
+			.map(repo::pull)
+			.map(Artifact::asConsumer)
+			.filter(Optional::isPresent).map(Optional::get)
+			.allMatch(c -> c.getConsumer().test(version));
+		if (proceed) {
+			for (ArtifactVersion metamodel : metamodels) {
+				for (ArtifactVersion transformation : repo.getTransformations(metamodel)) {
+					repo.pull(transformation).asTransformation().ifPresent(t -> t.accept(version));
+				}
 			}
-		}
-		for (ArtifactVersion metamodel : repo.getInputs(version)) {
-			for (Artifact model : repo.getInstances(metamodel)) {
-				repo.get(version).asTransformation().map(Transformation::getTransformation)
-					.flatMap(t -> t.apply(model)).ifPresent(repo::commit);
+			for (ArtifactVersion inputMetamodel : repo.getInputs(version)) {
+				for (ArtifactVersion instance : repo.getInstances(inputMetamodel)) {
+					repo.pull(version).asTransformation().ifPresent(t -> t.accept(instance));
+				}
 			}
 		}
 	}
@@ -273,7 +326,9 @@ public class Main {
 		
 		Set<ArtifactVersion> getOutputs();
 		
-		Optional<Transformation> asTransformation();
+		Optional<ModelTransformation> asTransformation();
+		
+		Optional<ModelConsumer> asConsumer();
 		
 	}
 	
@@ -296,9 +351,15 @@ public class Main {
 		
 	}
 	
-	public static interface Transformation extends Artifact {
+	public static interface ModelTransformation extends Artifact, Consumer<ArtifactVersion> {
 		
-		Function<Artifact, Optional<Artifact>> getTransformation();
+		Consumer<ArtifactVersion> getTransformation();
+		
+	}
+	
+	public static interface ModelConsumer extends Artifact {
+		
+		Predicate<ArtifactVersion> getConsumer();
 		
 	}
 	
@@ -343,10 +404,17 @@ public class Main {
 		}
 		
 		@Override
-		public Optional<Transformation> asTransformation() {
+		public Optional<ModelTransformation> asTransformation() {
 			return Optional.ofNullable(this)
-				.filter(Transformation.class::isInstance)
-				.map(Transformation.class::cast);
+				.filter(ModelTransformation.class::isInstance)
+				.map(ModelTransformation.class::cast);
+		}
+		
+		@Override
+		public Optional<ModelConsumer> asConsumer() {
+			return Optional.ofNullable(this)
+				.filter(ModelConsumer.class::isInstance)
+				.map(ModelConsumer.class::cast);
 		}
 		
 		@Override
@@ -371,18 +439,44 @@ public class Main {
 		
 	}
 	
-	public static class TransformationImpl extends ArtifactImpl implements Transformation {
+	public static class TransformationImpl extends ArtifactImpl implements ModelTransformation {
 		
-		private final Function<Artifact, Optional<Artifact>> transformation;
+		private final Consumer<ArtifactVersion> transformation;
 		
-		public TransformationImpl(ArtifactVersion version, Set<ArtifactVersion> metamodels, Set<ArtifactVersion> inputs, Set<ArtifactVersion> outputs, Function<Artifact, Optional<Artifact>> transformation) {
+		public TransformationImpl(ArtifactVersion version, Set<ArtifactVersion> metamodels, Set<ArtifactVersion> inputs, Set<ArtifactVersion> outputs, Consumer<ArtifactVersion> transformation) {
 			super(version, metamodels, inputs, outputs);
 			this.transformation = transformation;
 		}
+		
+		@Override
+		public Consumer<ArtifactVersion> getTransformation() {
+			return transformation;
+		}
+		
+		@Override
+		public void accept(ArtifactVersion t) {
+			transformation.accept(t);
+		}
+		
+		@Override
+		public boolean equals(Object obj) {
+			return super.equals(obj);
+		}
+		
+	}
+	
+	public static class ConsumerImpl extends ArtifactImpl implements ModelConsumer {
+		
+		private final Predicate<ArtifactVersion> consumer;
+		
+		public ConsumerImpl(ArtifactVersion version, Set<ArtifactVersion> metamodels, Set<ArtifactVersion> inputs, Set<ArtifactVersion> outputs, Predicate<ArtifactVersion> consumer) {
+			super(version, metamodels, inputs, outputs);
+			this.consumer = consumer;
+		}
 
 		@Override
-		public Function<Artifact, Optional<Artifact>> getTransformation() {
-			return transformation;
+		public Predicate<ArtifactVersion> getConsumer() {
+			return consumer;
 		}
 		
 		@Override
@@ -423,19 +517,21 @@ public class Main {
 	
 	public interface Repository {
 
-		Artifact get(ArtifactVersion version);
+		Artifact pull(ArtifactVersion version);
 
-		Set<Artifact> getInstances(ArtifactVersion version);
+		Set<ArtifactVersion> getInstances(ArtifactVersion version);
 
 		Set<ArtifactVersion> getMetamodels(ArtifactVersion version);
 
 		Set<ArtifactVersion> getInputs(ArtifactVersion version);
 
-		Set<Transformation> getAcceptingTransformations(ArtifactVersion version);
+		Set<ArtifactVersion> getTransformations(ArtifactVersion version);
+		
+		Set<ArtifactVersion> getConsumers(ArtifactVersion version);
 
-		void commit(Artifact a);
+		void push(Artifact a);
 
-		void commit(Artifact... a);
+		void push(Artifact... a);
 
 	}
 	
@@ -444,15 +540,16 @@ public class Main {
 		private Map<ArtifactVersion, Artifact> artifactsByVersion = new HashMap<>();
 		
 		@Override
-		public Artifact get(ArtifactVersion version) {
+		public Artifact pull(ArtifactVersion version) {
 			return artifactsByVersion.get(version);
 		}
 		
 		@Override
-		public Set<Artifact> getInstances(ArtifactVersion version) {
+		public Set<ArtifactVersion> getInstances(ArtifactVersion version) {
 			return artifactsByVersion.values().stream()
 				// find any model that has declared the argument as meta model
 				.filter(m1 -> m1.getMetamodels().contains(version))
+				.map(Artifact::version)
 				.collect(Collectors.toSet());
 		}
 		
@@ -473,30 +570,38 @@ public class Main {
 		}
 		
 		@Override
-		public Set<Transformation> getAcceptingTransformations(ArtifactVersion version) {
-			return artifactsByVersion.values().stream().map(Artifact::asTransformation)
-				// find any transformation that has declared the argument as an input
-				.filter(Optional::isPresent)
-				.map(Optional::get)
-				.filter(t -> t.getInputs().contains(version))
+		public Set<ArtifactVersion> getTransformations(ArtifactVersion version) {
+			return artifactsByVersion.values().stream()
+				// find any transformation that has declared the argument as an input and something as its output
+				.filter(t -> t.getInputs().contains(version) && !t.getOutputs().isEmpty())
+				.map(Artifact::version)
 				.collect(Collectors.toSet());
 		}
 		
 		@Override
-		public void commit(Artifact a) {
+		public Set<ArtifactVersion> getConsumers(ArtifactVersion version) {
+			return artifactsByVersion.values().stream()
+				// find any consumer that has declared the argument as an input and nothing as its output
+				.filter(t -> t.getInputs().contains(version) && t.getOutputs().isEmpty())
+				.map(Artifact::version)
+				.collect(Collectors.toSet());
+		}
+		
+		@Override
+		public void push(Artifact a) {
 			ArtifactVersion version = a.version();
 			while (artifactsByVersion.containsKey(version)) {
 				version = version.increment();
 			}			
 			Artifact newVersion = copyArtifact(a).withVersion(version).build();
 			artifactsByVersion.put(newVersion.version(), newVersion);
-			log("[COMMIT] " + newVersion);
+			log("[PUSH] " + newVersion);
 			onChange(this, newVersion.version());
 		}
 		
 		@Override
-		public void commit(Artifact... a) {
-			Arrays.asList(a).forEach(this::commit);
+		public void push(Artifact... a) {
+			Arrays.asList(a).forEach(this::push);
 		}
 		
 	}
@@ -592,9 +697,9 @@ public class Main {
 		return new TransformationBuilder(version);
 	}
 	
-	public static class TransformationBuilder extends AbstractArtifactBuilder<Transformation, TransformationBuilder> {
+	public static class TransformationBuilder extends AbstractArtifactBuilder<ModelTransformation, TransformationBuilder> {
 		
-		private Function<Artifact, Optional<Artifact>> transformation;
+		private Consumer<ArtifactVersion> transformation;
 		
 		public TransformationBuilder(String name) {
 			this.version = new ArtifactVersion(name, 0);
@@ -604,7 +709,7 @@ public class Main {
 			this.version = version;
 		}
 		
-		public TransformationBuilder withTransformation(Function<Artifact, Optional<Artifact>> transformation) {
+		public TransformationBuilder withTransformation(Consumer<ArtifactVersion> transformation) {
 			this.transformation = transformation;
 			return this;
 		}
@@ -615,8 +720,45 @@ public class Main {
 		}
 
 		@Override
-		public Transformation build() {
+		public ModelTransformation build() {
 			return new TransformationImpl(version, metamodels, inputs, outputs, transformation);
+		}
+		
+	}
+	
+	public static ConsumerBuilder buildConsumer(String name) {
+		return new ConsumerBuilder(name);
+	}
+	
+	public static ConsumerBuilder buildConsumer(ArtifactVersion version) {
+		return new ConsumerBuilder(version);
+	}
+	
+	public static class ConsumerBuilder extends AbstractArtifactBuilder<ModelConsumer, ConsumerBuilder> {
+		
+		private Predicate<ArtifactVersion> consumer;
+		
+		public ConsumerBuilder(String name) {
+			this.version = new ArtifactVersion(name, 0);
+		}
+		
+		public ConsumerBuilder(ArtifactVersion version) {
+			this.version = version;
+		}
+		
+		public ConsumerBuilder withConsumer(Predicate<ArtifactVersion> consumer) {
+			this.consumer = consumer;
+			return this;
+		}
+		
+		@Override
+		protected ConsumerBuilder getThis() {
+			return this;
+		}
+
+		@Override
+		public ModelConsumer build() {
+			return new ConsumerImpl(version, metamodels, inputs, outputs, consumer);
 		}
 		
 	}
@@ -662,8 +804,10 @@ public class Main {
 		AbstractArtifactBuilder<?, ?> builder;
 		if (artifact instanceof CoEvolutionModel coevm) {
 			builder = buildCoEvolutionModel(coevm.version()).withChangedArtifact(coevm.getChangedArtifact());
-		} else if (artifact instanceof Transformation t) {
+		} else if (artifact instanceof ModelTransformation t) {
 			builder = buildTransformation(t.version()).withTransformation(t.getTransformation());
+		} else if (artifact instanceof ModelConsumer c) {
+			builder = buildConsumer(c.version()).withConsumer(c.getConsumer());
 		} else {
 			builder = buildArtifact(artifact.version());
 		}
