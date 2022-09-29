@@ -122,7 +122,7 @@ public class Main {
 		.withMetamodel(ecore.version()).build();
 	private static final Artifact customerMicroservice = ArtifactImpl.buildArtifact("customerMicroservice")
 		.withMetamodel(microservice.version()).build();
-	private static final Artifact shoppingCartMicroservice = ArtifactImpl.buildArtifact("shoppingCardMicroservice")
+	private static final Artifact shoppingCartMicroservice = ArtifactImpl.buildArtifact("shoppingCartMicroservice")
 		.withMetamodel(microservice.version()).build();
 	private static final Artifact orderMicroservice = ArtifactImpl.buildArtifact("orderMicroservice")
 		.withMetamodel(microservice.version()).build();
