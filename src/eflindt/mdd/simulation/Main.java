@@ -268,7 +268,7 @@ public class Main {
 		}).build();
 	
 	public static void example1() {
-		repo.push(executable, sourceCode, ecore, trafoMM, java, javaBuildPipeline, springBootPlatform, dotNetPlatform, pythonPlatform, microservice, microserviceToSpringBoot, microserviceToDotNet, customerMicroservice, shoppingCartMicroservice, orderMicroservice, microserviceToPython, generatorValidator, microserviceAnalyzer, microserviceSimulator, microserviceValidator, deploymentPipeline);
+		repo.push(executable, sourceCode, ecore, trafoMM, java, javaBuildPipeline, springBootPlatform, dotNetPlatform, pythonPlatform, microservice, generatorValidator, microserviceAnalyzer, microserviceSimulator, microserviceValidator, microserviceToSpringBoot, microserviceToDotNet, customerMicroservice, shoppingCartMicroservice, orderMicroservice, microserviceToPython, deploymentPipeline);
 		log("### Changing microservice meta model and migrating Spring Boot generator manually:");
 		repo.push(customerMicroservice);
 		repo.push(microservice);
@@ -279,14 +279,14 @@ public class Main {
 	}
 
 	public static void example2() {
-		repo.push(executable, sourceCode, ecore, trafoMM, java, javaBuildPipeline, springBootPlatform, dotNetPlatform, pythonPlatform, coEvModelGen, modelCoEvGen, trafoCoEvGen, microservice, microserviceToSpringBoot, microserviceToDotNet, customerMicroservice, shoppingCartMicroservice, orderMicroservice, microserviceToPython, generatorValidator, microserviceAnalyzer, microserviceSimulator, microserviceValidator, deploymentPipeline);
+		repo.push(executable, deploymentPipeline, sourceCode, ecore, trafoMM, java, javaBuildPipeline, springBootPlatform, dotNetPlatform, pythonPlatform, coEvModelGen, modelCoEvGen, trafoCoEvGen, microservice, generatorValidator, microserviceAnalyzer, microserviceSimulator, microserviceValidator, microserviceToSpringBoot, microserviceToDotNet, customerMicroservice, shoppingCartMicroservice, orderMicroservice, microserviceToPython);
 		// adding the meta model again will trigger the creation of a new version
 		log("### Changing microservice meta model:");
 		repo.push(microservice);
 	}
 
 	public static void example3() {
-		repo.push(executable, sourceCode, ecore, trafoMM, java, javaBuildPipeline, springBootPlatform, dotNetPlatform, pythonPlatform, coEvModelGen, modelCoEvGen, trafoCoEvGen, microservice, microserviceToSpringBoot, microserviceToDotNet, customerMicroservice, shoppingCartMicroservice, orderMicroservice, microserviceToPython, generatorValidator, microserviceAnalyzer, microserviceSimulator, microserviceValidator, deploymentPipeline);
+		repo.push(executable, sourceCode, ecore, trafoMM, java, javaBuildPipeline, springBootPlatform, dotNetPlatform, pythonPlatform, coEvModelGen, modelCoEvGen, trafoCoEvGen, microservice, generatorValidator, microserviceAnalyzer, microserviceSimulator, microserviceValidator, microserviceToSpringBoot, microserviceToDotNet, customerMicroservice, shoppingCartMicroservice, orderMicroservice, microserviceToPython, deploymentPipeline);
 		log("### Changing Spring Boot platform:");
 		// update the platform
 		repo.push(springBootPlatform);
