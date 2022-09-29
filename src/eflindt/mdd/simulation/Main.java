@@ -18,8 +18,8 @@ public class Main {
 	
 	static {
 		examples.put(1, new Example("Ecosystem with manual co-evolution support where a meta model is changed", Main::example1));
-		examples.put(2, new Example("Ecosystem with support for semi-automatic model and transformation co-evolution where a meta model is changed", Main::example2));
-		examples.put(3, new Example("Ecosystem with support for semi-automatic model and transformation co-evolution where a platform is changed and migrated manually", Main::example3));
+		examples.put(2, new Example("Ecosystem with support for automatic model and transformation co-evolution where a meta model is changed", Main::example2));
+		examples.put(3, new Example("Ecosystem with support for automatic model and transformation co-evolution where a platform is changed and migrated manually", Main::example3));
 		examples.put(4, new Example("Ecosystem with transformation to same metamodel version, will create a loop", Main::example4));
 	}
 	
